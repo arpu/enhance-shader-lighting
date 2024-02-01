@@ -40,10 +40,10 @@ const aoCode = /* glsl */ `
 float aoMapClr = 1.;
 
 #ifdef USE_AOMAP
-    aoMapClr = (texture2D(aoMap, vUv2).r - 1.) * aoMapIntensity + 1.;
+    aoMapClr = (texture2D(aoMap, vAoMapUv).r - 1.) * aoMapIntensity + 1.;
 #else
     #ifdef USE_LIGHTMAP
-        vec3 lightMapVec = (texture2D(lightMap, vUv2).rgb - vec3(1.)) * (lightMapIntensity / PI) + vec3(1.);
+        vec3 lightMapVec = (texture2D(lightMap, vLightMapUv).rgb - vec3(1.)) * (lightMapIntensity / PI) + vec3(1.);
         
         const vec3 luminanceWeight = vec3(0.2126, 0.7152, 0.0722);
 
@@ -135,7 +135,7 @@ const map_fragment = THREE.ShaderChunk.map_fragment.replace(
 	"diffuseColor *= sampledDiffuseColor;",
 	/* glsl */ `
     #ifdef USE_LIGHTMAP
-        vec3 lightMapClr = (texture2D(lightMap, vUv2).rgb - vec3(1.)) * (lightMapIntensity / PI) + vec3(1.);
+        vec3 lightMapClr = (texture2D(lightMap, vLightMapUv).rgb - vec3(1.)) * (lightMapIntensity / PI) + vec3(1.);
     #else
         vec3 lightMapClr = vec3(1.);
     #endif
@@ -209,8 +209,8 @@ const toVec3 = color => {
 	return "vec3(" + toFloat32(color.r) + ", " + toFloat32(color.g) + ", " + toFloat32(color.b) + ")"
 }
 
-export function enhanceShaderLighting(
-	shader,
+
+export function enhanceShaderLighting( shader,
 	{
 		aoColor = new THREE.Color(0x000000),
 		hemisphereColor = new THREE.Color(0xffffff),
@@ -318,19 +318,17 @@ export function enhanceShaderLighting(
 		.replace(
 			"uniform float opacity;",
 			/* glsl */ `
-  #define ENHANCE_SHADER_LIGHTING
-
-  uniform float opacity;
-
-  ${shaderFunctions}
-  `
+            #define ENHANCE_SHADER_LIGHTING
+            uniform float opacity;
+            ${shaderFunctions}
+            `
 		)
 		.replace(
 			"main() {",
 			`
-      main() {
-      ${aoCode}
-      `
+            main() {
+            ${aoCode}
+            `
 		)
 		.replace("#include <aomap_fragment>", "")
 		.replace("#include <lights_pars_begin>", lights_pars_begin)
@@ -338,13 +336,21 @@ export function enhanceShaderLighting(
 		.replace("#include <lightmap_fragment>", lightmap_fragment)
 		.replace("#include <map_fragment>", map_fragment)
 		.replace("#include <envmap_physical_pars_fragment>", THREE.ShaderChunk.envmap_physical_pars_fragment)
-		.replace("getIBLIrradiance( const in vec3 normal )", "getIBLIrradiance( const in vec3 normal, float aoMapClr )")
+
+        // in envmap_physical_pars_fragment
+		.replace(
+            "getIBLIrradiance( const in vec3 normal )", 
+            "getIBLIrradiance( const in vec3 normal, float aoMapClr )"
+        )
 		.replace(
 			"getIBLRadiance( const in vec3 viewDir, const in vec3 normal, const in float roughness )",
 			"getIBLRadiance( const in vec3 viewDir, const in vec3 normal, const in float roughness, float aoMapClr )"
 		)
+
 		.replace("return PI * envMapColor.rgb * envMapIntensity;", getIBLIrradiance_replace)
 		.replace("return envMapColor.rgb * envMapIntensity;", getIBLRadiance_replace)
+
+
 		.replace(
 			" #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )",
 			/* glsl */ `
@@ -352,22 +358,19 @@ export function enhanceShaderLighting(
             #if defined( USE_ENVMAP ) && defined( RE_IndirectSpecular )
             `
 		)
-		.replace(
-			"iblIrradiance += getIBLIrradiance( geometry.normal );",
-			/* glsl */ `
-            iblIrradiance += getIBLIrradiance( geometry.normal, aoMapClr );
-            `
-		)
-		.replace(
-			"radiance += getIBLRadiance( geometry.viewDir, geometry.normal, material.roughness );",
-			/* glsl */ `
-            radiance += getIBLRadiance( geometry.viewDir, geometry.normal, pow(material.roughness, roughnessPower), aoMapClr );
-            `
-		)
-		.replace(
-			"clearcoatRadiance += getIBLRadiance( geometry.viewDir, geometry.clearcoatNormal, material.clearcoatRoughness );",
-			/* glsl */ `
-            clearcoatRadiance += getIBLRadiance( geometry.viewDir, geometry.clearcoatNormal, pow(material.clearcoatRoughness, roughnessPower), aoMapClr );
-            `
-		)
+        
+        // in lights_fragment_maps
+        .replace(
+            "iblIrradiance += getIBLIrradiance( geometryNormal );",
+            "iblIrradiance += getIBLIrradiance( geometryNormal, aoMapClr );"
+        )
+        .replace(
+            "radiance += getIBLRadiance( geometryViewDir, geometryNormal, material.roughness );",
+            "radiance += getIBLRadiance( geometryViewDir, geometryNormal, pow(material.roughness, roughnessPower), aoMapClr );"
+        )
+        .replace(
+            "clearcoatRadiance += getIBLRadiance( geometryViewDir, geometryClearcoatNormal, material.clearcoatRoughness );",
+            "clearcoatRadiance += getIBLRadiance( geometryViewDir, geometryClearcoatNormal, pow(material.clearcoatRoughness, roughnessPower), aoMapClr );"
+        )
+
 }
